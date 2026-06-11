@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Electron AI is a multi-model workspace where specialist agents plan, build, and review together."
+    />
+    <meta name="theme-color" content="#07152d" />
+    <title>Electron AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="noise" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand-row">
+          <a class="brand" href="#" aria-label="Electron AI home">
+            <span class="brand-mark" aria-hidden="true">
+              <span class="orbit orbit-a"></span>
+              <span class="orbit orbit-b"></span>
+              <span class="nucleus"></span>
+            </span>
+            <span>
+              <strong>Electron</strong>
+              <small>AI WORKSPACE</small>
+            </span>
+          </a>
+          <button class="icon-button mobile-only" id="closeSidebar" aria-label="Close chats">
+            <span>×</span>
+          </button>
+        </div>
+
+        <button class="new-chat-button" id="newChatButton">
+          <span class="plus">+</span>
+          <span>New conversation</span>
+          <kbd>⌘ N</kbd>
+        </button>
+
+        <div class="sidebar-label">
+          <span>Active chats</span>
+          <span id="chatCount">0</span>
+        </div>
+        <nav class="chat-list" id="chatList" aria-label="Chat history"></nav>
+
+        <div class="sidebar-footer">
+          <button class="footer-link" id="openSettings">
+            <span class="footer-icon">⌁</span>
+            <span>
+              <strong>Connection</strong>
+              <small id="connectionLabel">Demo mode</small>
+            </span>
+            <span class="status-dot" id="connectionDot"></span>
+          </button>
+          <button class="user-card" id="openAbout">
+            <span class="avatar">EA</span>
+            <span>
+              <strong>Electron workspace</strong>
+              <small>Private on this device</small>
+            </span>
+            <span>•••</span>
+          </button>
+        </div>
+      </aside>
+
+      <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="icon-button mobile-only" id="openSidebar" aria-label="Open chats">
+              <span>☰</span>
+            </button>
+            <div class="conversation-title">
+              <span class="eyebrow">WORKSPACE / <span id="workspaceMode">GENERAL</span></span>
+              <button id="renameChatButton" title="Rename conversation">
+                <span id="currentChatTitle">New conversation</span>
+                <span class="edit-glyph">✎</span>
+              </button>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <div class="live-status">
+              <span class="pulse"></span>
+              <span>7 agents ready</span>
+            </div>
+            <button class="secondary-button" id="toggleCouncil">
+              <span class="button-glyph">◫</span>
+              <span>Agent council</span>
+            </button>
+            <button class="icon-button" id="clearChatButton" aria-label="Clear conversation" title="Clear conversation">
+              <span>⌫</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="workspace">
+          <div class="conversation-pane">
+            <div class="messages" id="messages" aria-live="polite"></div>
+
+            <section class="welcome" id="welcome">
+              <div class="welcome-orbit" aria-hidden="true">
+                <span class="orbit-line orbit-line-a"></span>
+                <span class="orbit-line orbit-line-b"></span>
+                <span class="orbit-line orbit-line-c"></span>
+                <span class="welcome-core"></span>
+              </div>
+              <span class="section-kicker">MULTI-MODEL INTELLIGENCE</span>
+              <h1>Seven perspectives.<br /><em>One clear answer.</em></h1>
+              <p>
+                Electron routes each problem to the models best suited for it, then has
+                Codex and Claude independently review the result before it reaches you.
+              </p>
+              <div class="starter-grid">
+                <button class="starter-card" data-prompt="Design and build a polished landing page for a new developer tool.">
+                  <span class="starter-icon blue">⌘</span>
+                  <span>
+                    <strong>Build an interface</strong>
+                    <small>Plan, code, and review a complete UI</small>
+                  </span>
+                  <span class="arrow">↗</span>
+                </button>
+                <button class="starter-card" data-prompt="Review my project architecture and identify the most important risks and improvements.">
+                  <span class="starter-icon violet">◎</span>
+                  <span>
+                    <strong>Review architecture</strong>
+                    <small>Find risks across the whole system</small>
+                  </span>
+                  <span class="arrow">↗</span>
+                </button>
+                <button class="starter-card" data-prompt="Research this topic from multiple angles and give me a concise, sourced briefing.">
+                  <span class="starter-icon cyan">◇</span>
+                  <span>
+                    <strong>Deep research</strong>
+                    <small>Compare evidence and synthesize findings</small>
+                  </span>
+                  <span class="arrow">↗</span>
+                </button>
+              </div>
+            </section>
+
+            <div class="composer-wrap">
+              <div class="run-banner" id="runBanner" hidden>
+                <div>
+                  <span class="spinner"></span>
+                  <span id="runStatus">Assembling the council</span>
+                </div>
+                <button id="stopRunButton">Stop</button>
+              </div>
+              <form class="composer" id="composer">
+                <textarea
+                  id="promptInput"
+                  rows="1"
+                  maxlength="24000"
+                  placeholder="Ask Electron to build, research, reason, or review..."
+                  aria-label="Message Electron AI"
+                ></textarea>
+                <div class="composer-toolbar">
+                  <div class="composer-tools">
+                    <button type="button" class="tool-button" id="attachButton" title="Attach files">
+                      <span>＋</span>
+                    </button>
+                    <input type="file" id="fileInput" hidden multiple />
+                    <div class="select-control">
+                      <span class="select-icon">⌁</span>
+                      <select id="editorTarget" aria-label="Execution target">
+                        <option value="web">Open in website editor</option>
+                        <option value="vscode">Execute in Visual Studio Code</option>
+                        <option value="response">Answer in chat only</option>
+                      </select>
+                    </div>
+                    <div class="select-control effort-control">
+                      <span class="select-icon">◷</span>
+                      <select id="effortLevel" aria-label="Effort level">
+                        <option value="fast">Fast effort</option>
+                        <option value="balanced" selected>Balanced effort</option>
+                        <option value="max">Maximum effort</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="send-area">
+                    <span id="attachmentCount"></span>
+                    <span class="shortcut-hint">Enter to send</span>
+                    <button class="send-button" type="submit" id="sendButton" aria-label="Send message">
+                      <span>↑</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+              <p class="composer-note">Electron can make mistakes. Review generated code before running it.</p>
+            </div>
+          </div>
+
+          <aside class="council-panel" id="councilPanel">
+            <div class="panel-header">
+              <div>
+                <span class="section-kicker">ORCHESTRATION</span>
+                <h2>Agent council</h2>
+              </div>
+              <button class="icon-button" id="closeCouncil" aria-label="Close agent council">
+                <span>×</span>
+              </button>
+            </div>
+
+            <div class="council-summary">
+              <div class="summary-ring">
+                <span>7</span>
+                <small>ACTIVE</small>
+              </div>
+              <div>
+                <strong>Full council enabled</strong>
+                <p>Each model contributes where it is strongest.</p>
+              </div>
+            </div>
+
+            <div class="panel-section">
+              <div class="panel-section-title">
+                <span>Specialists</span>
+                <button id="toggleAllModels">Disable all</button>
+              </div>
+              <div class="model-list" id="modelList"></div>
+            </div>
+
+            <div class="panel-section approval-section">
+              <div class="panel-section-title">
+                <span>Approval policy</span>
+                <span class="policy-badge" id="policyBadge">ALTERNATIVES</span>
+              </div>
+              <div class="approval-options" id="approvalOptions">
+                <label>
+                  <input type="radio" name="approval" value="everything" />
+                  <span>
+                    <strong>Ask for everything</strong>
+                    <small>Confirm every plan and action</small>
+                  </span>
+                </label>
+                <label>
+                  <input type="radio" name="approval" value="alternatives" checked />
+                  <span>
+                    <strong>Project alternatives</strong>
+                    <small>Ask when a meaningful approach changes</small>
+                  </span>
+                </label>
+                <label>
+                  <input type="radio" name="approval" value="features" />
+                  <span>
+                    <strong>Suggested features</strong>
+                    <small>Ask before adding new scope</small>
+                  </span>
+                </label>
+                <label>
+                  <input type="radio" name="approval" value="none" />
+                  <span>
+                    <strong>Do not ask</strong>
+                    <small>Proceed within configured permissions</small>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="pipeline">
+              <span class="section-kicker">QUALITY LOOP</span>
+              <div class="pipeline-row">
+                <span class="pipeline-node codex-node">C</span>
+                <span class="pipeline-line">
+                  <i></i>
+                  <small>BUILD</small>
+                </span>
+                <span class="pipeline-node claude-node">A</span>
+                <span class="pipeline-line reverse">
+                  <i></i>
+                  <small>REVIEW</small>
+                </span>
+                <span class="pipeline-node result-node">✓</span>
+              </div>
+              <p>Codex builds. Claude reviews. Codex verifies the revision.</p>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <section class="editor-drawer" id="editorDrawer" aria-label="Website editor">
+      <div class="editor-header">
+        <div class="editor-tabs">
+          <button class="editor-tab active">
+            <span class="file-dot"></span>
+            <span id="editorFilename">electron-output.js</span>
+          </button>
+        </div>
+        <div class="editor-actions">
+          <span class="editor-state" id="editorState">Ready</span>
+          <button id="copyCodeButton">Copy</button>
+          <button id="downloadCodeButton">Download</button>
+          <button class="primary-small" id="openVsCodeButton">Open in VS Code</button>
+          <button class="icon-button" id="closeEditor" aria-label="Close editor">×</button>
+        </div>
+      </div>
+      <div class="editor-body">
+        <div class="line-numbers" id="lineNumbers" aria-hidden="true"></div>
+        <textarea id="codeEditor" spellcheck="false" aria-label="Generated code editor"></textarea>
+      </div>
+    </section>
+
+    <dialog class="modal" id="settingsModal">
+      <form method="dialog" class="modal-card" id="settingsForm">
+        <div class="modal-heading">
+          <div>
+            <span class="section-kicker">CONNECTION</span>
+            <h2>Connect Electron</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="Close settings">×</button>
+        </div>
+        <p class="modal-copy">
+          GitHub Pages cannot safely store model API keys. Connect this interface to
+          the included Worker backend, where secrets remain encrypted server-side.
+        </p>
+        <label class="field">
+          <span>Backend URL</span>
+          <input id="backendUrl" type="url" placeholder="https://electron-ai.your-name.workers.dev" />
+        </label>
+        <label class="field">
+          <span>Access token <small>required for backend mode</small></span>
+          <input id="accessToken" type="password" placeholder="Held in memory until page reload" />
+        </label>
+        <div class="connection-test" id="connectionTest">
+          <span class="status-dot"></span>
+          <span>Demo mode is active. No external requests are sent.</span>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" id="testConnection">Test connection</button>
+          <button class="primary-button" value="default" id="saveSettings">Save connection</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="approvalModal">
+      <form method="dialog" class="modal-card approval-modal-card">
+        <div class="approval-hero">
+          <span class="approval-mark">?</span>
+          <div>
+            <span class="section-kicker">APPROVAL REQUIRED</span>
+            <h2 id="approvalTitle">Choose an approach</h2>
+          </div>
+        </div>
+        <p id="approvalDescription"></p>
+        <div class="approval-choice-grid" id="approvalChoices"></div>
+        <div class="modal-actions">
+          <button class="secondary-button" value="cancel">Cancel run</button>
+          <button class="primary-button" value="approve" id="approveRun">Approve selection</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"></div>
+
+    <template id="messageTemplate">
+      <article class="message">
+        <div class="message-avatar"></div>
+        <div class="message-content">
+          <div class="message-meta">
+            <strong></strong>
+            <span></span>
+          </div>
+          <div class="message-body"></div>
+          <div class="message-actions">
+            <button data-action="copy">Copy</button>
+            <button data-action="editor">Open artifact</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

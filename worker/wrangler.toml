@@ -1,0 +1,21 @@
+name = "electron-ai-orchestrator"
+main = "worker.js"
+compatibility_date = "2026-06-11"
+
+[vars]
+# Backend mode requires a dedicated origin. Replace this before deployment.
+ALLOWED_ORIGINS = "https://REPLACE-WITH-YOUR-DEDICATED-ORIGIN.example"
+
+# Optional model overrides. Keep these current with each provider's model catalog.
+OPENAI_MODEL_ID = "gpt-5.5"
+GEMINI_MODEL_ID = "gemini-3.1-pro-preview"
+QWEN_MODEL_ID = "qwen3.7-max"
+
+[[ratelimits]]
+name = "ELECTRON_RATE_LIMITER"
+# Choose an integer namespace unique within your Cloudflare account.
+namespace_id = "1001"
+
+[ratelimits.simple]
+limit = 6
+period = 60
