@@ -89,7 +89,7 @@
           <div class="topbar-actions">
             <div class="live-status">
               <span class="pulse"></span>
-              <span>7 agents ready</span>
+              <span id="agentStatusLabel">Offline demo</span>
             </div>
             <button class="secondary-button" id="toggleCouncil">
               <span class="button-glyph">◫</span>
@@ -114,7 +114,7 @@
               </div>
               <span class="section-kicker">MULTI-MODEL INTELLIGENCE</span>
               <h1>Seven perspectives.<br /><em>One clear answer.</em></h1>
-              <p>
+              <p id="welcomeDescription">
                 Electron routes each problem to the models best suited for it, then has
                 Codex and Claude independently review the result before it reaches you.
               </p>
@@ -194,7 +194,7 @@
                   </div>
                 </div>
               </form>
-              <p class="composer-note">Electron can make mistakes. Review generated code before running it.</p>
+              <p class="composer-note" id="composerNote">Offline demo mode. No models or external tools are running.</p>
             </div>
           </div>
 
@@ -320,22 +320,51 @@
         </div>
         <p class="modal-copy">
           GitHub Pages cannot safely store model API keys. Connect this interface to
-          the included Worker backend, where secrets remain encrypted server-side.
+          the model Worker for AI responses, and connect GitHub separately for
+          repository reads and approved commits. Secret tokens are held in memory only
+          until this page is reloaded.
         </p>
-        <label class="field">
-          <span>Backend URL</span>
-          <input id="backendUrl" type="url" placeholder="https://electron-ai.your-name.workers.dev" />
-        </label>
-        <label class="field">
-          <span>Access token <small>required for backend mode</small></span>
-          <input id="accessToken" type="password" placeholder="Held in memory until page reload" />
-        </label>
-        <div class="connection-test" id="connectionTest">
-          <span class="status-dot"></span>
-          <span>Demo mode is active. No external requests are sent.</span>
+        <div class="connection-block">
+          <div class="connection-block-heading">
+            <strong>Model backend</strong>
+            <button class="secondary-button" type="button" id="testConnection">Test model connection</button>
+          </div>
+          <label class="field">
+            <span>Backend URL</span>
+            <input id="backendUrl" type="url" placeholder="https://electron-ai.your-name.workers.dev" />
+          </label>
+          <label class="field">
+            <span>Access token <small>required for backend mode</small></span>
+            <input id="accessToken" type="password" placeholder="Held in memory until page reload" />
+          </label>
+          <div class="connection-test" id="connectionTest">
+            <span class="status-dot"></span>
+            <span>Demo mode is active. No external requests are sent.</span>
+          </div>
+        </div>
+        <div class="connection-block">
+          <div class="connection-block-heading">
+            <strong>GitHub repository</strong>
+            <button class="secondary-button" type="button" id="testGitHubConnection">Test GitHub access</button>
+          </div>
+          <label class="field">
+            <span>Repository <small>owner/name</small></span>
+            <input id="githubRepository" type="text" placeholder="owner/repository" />
+          </label>
+          <label class="field">
+            <span>Branch</span>
+            <input id="githubBranch" type="text" placeholder="main" />
+          </label>
+          <label class="field">
+            <span>Fine-grained token <small>Session only; see permission guide</small></span>
+            <input id="githubToken" type="password" placeholder="Held in memory until page reload" />
+          </label>
+          <div class="connection-test" id="githubConnectionTest">
+            <span class="status-dot"></span>
+            <span>GitHub repository access is not configured.</span>
+          </div>
         </div>
         <div class="modal-actions">
-          <button class="secondary-button" type="button" id="testConnection">Test connection</button>
           <button class="primary-button" value="default" id="saveSettings">Save connection</button>
         </div>
       </form>
@@ -351,6 +380,7 @@
           </div>
         </div>
         <p id="approvalDescription"></p>
+        <div class="approval-preview" id="approvalPreview" hidden></div>
         <div class="approval-choice-grid" id="approvalChoices"></div>
         <div class="modal-actions">
           <button class="secondary-button" value="cancel">Cancel run</button>

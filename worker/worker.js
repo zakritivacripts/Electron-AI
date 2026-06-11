@@ -101,6 +101,20 @@ export default {
 
 async function orchestrate(payload, env) {
   const input = validatePayload(payload);
+  const externalAction = detectExternalActionRequest(input);
+  if (externalAction && input.taskMode !== "prepare-artifact") {
+    return {
+      answer: safeExternalActionResponse(externalAction),
+      artifact: null,
+      meta: "External action unavailable",
+      agents: [],
+      failures: [],
+      capabilities: {
+        externalActionsAvailable: false,
+        externalActionsExecuted: false,
+      },
+    };
+  }
   const requestedModels =
     input.approvalSelection === "lead"
       ? ["gpt-5.5"]
@@ -123,8 +137,14 @@ async function orchestrate(payload, env) {
         "You are one specialist inside Electron AI's model council.",
         `Your assigned strength: ${registry.role}.`,
         "Analyze the user's request independently. Be concrete, technically accurate, and concise.",
+        "The newest CURRENT REQUEST is authoritative. Answer that request directly instead of repeating a prior assistant response.",
         "Call out assumptions, risks, and a recommended implementation.",
-        "Do not claim that you ran tools or changed files.",
+        "You have no repository, shell, browser, deployment, or GitHub-write tool in this service.",
+        "Never claim that you cloned, imported, committed, pushed, deployed, enabled Pages, or changed files.",
+        "For external-action requests, distinguish clearly between a proposed plan and an action that was actually executed.",
+        input.taskMode === "prepare-artifact"
+          ? "The browser has a separately authorized GitHub integration. Prepare the requested complete file artifact for later user approval, but do not claim it was committed."
+          : "Return an answer for the user; only create an artifact when code is requested.",
         `Approval policy: ${input.approvalPolicy}; approved direction: ${input.approvalSelection}.`,
       ].join("\n");
       const text = await callModel(modelId, system, context, input.effort, env);
@@ -180,9 +200,44 @@ async function orchestrate(payload, env) {
   } catch (error) {
     failures.push({ modelId: "verification", error: safeProviderError(error) });
   }
-  const final = finalResult.text;
-  const artifact = extractArtifact(final, input.editorTarget);
+  let final = finalResult.text;
+  let correctiveRewrite = false;
+  const previousAssistant = [...input.messages]
+    .reverse()
+    .find((message) => message.role === "assistant")?.content;
+  const retryModel =
+    finalResult.modelId ||
+    contributions.find((contribution) =>
+      models.includes(contribution.modelId),
+    )?.modelId ||
+    null;
+  if (
+    previousAssistant &&
+    isNearDuplicate(final, previousAssistant) &&
+    retryModel
+  ) {
+    try {
+      final = await callModel(
+        retryModel,
+        [
+          "Answer the newest user request directly.",
+          "Your previous draft duplicated the earlier assistant response.",
+          "Produce a materially different answer specific to the current request.",
+          "Do not claim external actions were executed; this service has no repository or deployment tools.",
+          artifactInstructions(input.editorTarget, input.taskMode),
+        ].join("\n"),
+        `${context}\n\nDUPLICATED RESPONSE TO AVOID:\n${truncate(previousAssistant, 12_000)}`,
+        input.effort,
+        env,
+      );
+      correctiveRewrite = true;
+    } catch (error) {
+      failures.push({ modelId: "deduplication", error: safeProviderError(error) });
+    }
+  }
+  const artifact = extractArtifact(final, input.editorTarget, input.taskMode);
   const crossReviewed =
+    !correctiveRewrite &&
     MODEL_REGISTRY[reviewResult.modelId]?.provider === "anthropic" &&
     finalResult.modelId === "gpt-5.5";
 
@@ -198,6 +253,10 @@ async function orchestrate(payload, env) {
       status: "completed",
     })),
     failures,
+    capabilities: {
+      externalActionsAvailable: false,
+      externalActionsExecuted: false,
+    },
   };
 }
 
@@ -222,6 +281,9 @@ function validatePayload(payload) {
   const editorTarget = ["web", "vscode", "response"].includes(payload.editorTarget)
     ? payload.editorTarget
     : "response";
+  const taskMode = payload.taskMode === "prepare-artifact"
+    ? "prepare-artifact"
+    : "answer";
   const approvalSelection = String(
     payload.approvalSelection || "policy-cleared",
   ).slice(0, 80);
@@ -233,6 +295,7 @@ function validatePayload(payload) {
     approvalPolicy,
     approvalSelection,
     editorTarget,
+    taskMode,
     models: Array.isArray(payload.models)
       ? [...new Set(payload.models.map(String))].slice(0, DEFAULT_MODELS.length)
       : DEFAULT_MODELS,
@@ -308,9 +371,11 @@ async function synthesizeDraft(contributions, input, context, env, allowedModels
     "\nCOUNCIL CONTRIBUTIONS:",
     transcript,
     "\nCreate a single implementation-ready draft.",
+    "The newest CURRENT REQUEST overrides older conversation goals.",
+    "Do not reuse a prior assistant answer unless the user explicitly asks for it.",
     "Reconcile disagreements instead of voting blindly.",
     "Preserve the strongest concrete details and explicitly resolve material risks.",
-    artifactInstructions(input.editorTarget),
+    artifactInstructions(input.editorTarget, input.taskMode),
   ].join("\n");
 
   const preferred = pickAvailable(
@@ -373,9 +438,12 @@ async function verifyFinal(draft, review, input, context, env, allowedModels) {
       [
         "You are the final Codex verifier in Electron AI.",
         "Apply every valid review finding, reject incorrect review claims, and return the final user-facing answer.",
+        "Answer the newest CURRENT REQUEST, not an older request from conversation history.",
+        "Do not repeat an earlier assistant response unless the user explicitly requests repetition.",
+        "Never claim repository, GitHub, shell, or deployment actions were executed because this service has no such tools.",
         "Do not mention hidden deliberation or expose chain-of-thought.",
         "Be direct and implementation-ready.",
-        artifactInstructions(input.editorTarget),
+        artifactInstructions(input.editorTarget, input.taskMode),
       ].join("\n"),
       [
         context,
@@ -389,7 +457,15 @@ async function verifyFinal(draft, review, input, context, env, allowedModels) {
   };
 }
 
-function artifactInstructions(editorTarget) {
+function artifactInstructions(editorTarget, taskMode = "answer") {
+  if (taskMode === "prepare-artifact") {
+    return [
+      "Return exactly one primary complete file artifact in a fenced code block.",
+      "Put its repository-relative filename on the line immediately before the block using exactly: FILE: path/to/filename.ext",
+      "The file must be ready for review and commit; do not claim that it has already been written or committed.",
+      "Keep any short explanation outside the fenced block.",
+    ].join("\n");
+  }
   if (editorTarget === "response") {
     return "Return the answer in Markdown. Include code only when it is needed.";
   }
@@ -732,17 +808,29 @@ async function providerJson(response, provider) {
   return payload;
 }
 
-function extractArtifact(answer, editorTarget) {
+function extractArtifact(answer, editorTarget, taskMode = "answer") {
   if (editorTarget === "response") return null;
   const match = answer.match(
     /(?:^|\n)FILE:\s*([^\n]+)\n```([\w.+-]*)\n([\s\S]*?)```/i,
   );
   if (!match) return null;
   return {
-    filename: safeFilename(match[1].trim()),
+    filename:
+      taskMode === "prepare-artifact"
+        ? safeRepositoryPath(match[1].trim())
+        : safeFilename(match[1].trim()),
     language: match[2] || "text",
     content: match[3].trimEnd(),
   };
+}
+
+function safeRepositoryPath(value) {
+  const parts = String(value || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((part) => part && part !== "." && part !== "..")
+    .map((part) => safeFilename(part));
+  return parts.join("/").slice(0, 240) || "electron-output.txt";
 }
 
 function removeArtifactBlock(answer, content) {
@@ -767,6 +855,135 @@ function safeFilename(value) {
 function truncate(value, max) {
   const text = String(value || "");
   return text.length > max ? `${text.slice(0, max)}\n[truncated]` : text;
+}
+
+function isNearDuplicate(left, right) {
+  const normalizedLeft = normalizeText(left);
+  const normalizedRight = normalizeText(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  const shorter =
+    normalizedLeft.length <= normalizedRight.length
+      ? normalizedLeft
+      : normalizedRight;
+  const longer =
+    normalizedLeft.length > normalizedRight.length
+      ? normalizedLeft
+      : normalizedRight;
+  if (shorter.length >= 80 && longer.includes(shorter)) return true;
+
+  const leftWords = normalizedWordSet(left);
+  const rightWords = normalizedWordSet(right);
+  if (leftWords.size < 8 || rightWords.size < 8) {
+    if (normalizedLeft === normalizedRight) return true;
+    const leftNgrams = characterNgrams(normalizedLeft);
+    const rightNgrams = characterNgrams(normalizedRight);
+    return setContainment(leftNgrams, rightNgrams) >= 0.88;
+  }
+  let intersection = 0;
+  leftWords.forEach((word) => {
+    if (rightWords.has(word)) intersection += 1;
+  });
+  const union = new Set([...leftWords, ...rightWords]).size;
+  const smallerSet = Math.min(leftWords.size, rightWords.size);
+  const containment = smallerSet > 0 ? intersection / smallerSet : 0;
+  const jaccard = union > 0 ? intersection / union : 0;
+  return containment >= 0.9 || jaccard >= 0.76;
+}
+
+function normalizedWordSet(value) {
+  return new Set(
+    normalizeText(value)
+      .match(/[\p{L}\p{N}]+/gu)
+      ?.filter((word) => [...word].length > 1) || [],
+  );
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function characterNgrams(value, size = 3) {
+  const characters = [...value.replace(/\s+/g, "")];
+  const grams = new Set();
+  for (let index = 0; index <= characters.length - size; index += 1) {
+    grams.add(characters.slice(index, index + size).join(""));
+  }
+  return grams;
+}
+
+function setContainment(left, right) {
+  if (!left.size || !right.size) return 0;
+  let intersection = 0;
+  left.forEach((value) => {
+    if (right.has(value)) intersection += 1;
+  });
+  return intersection / Math.min(left.size, right.size);
+}
+
+function detectExternalActionRequest(input) {
+  const current = normalizeText(input.prompt);
+  if (asksForInstructions(current)) return null;
+  if (containsExternalAction(current)) return input.prompt;
+
+  const followUp =
+    /^(do it|proceed|go ahead|continue|execute it|make it happen|yes do it|yes proceed)$/u.test(
+      current,
+    );
+  if (!followUp) return null;
+
+  const previousRequest = [...input.messages]
+    .reverse()
+    .filter((message) => message.role === "user")
+    .map((message) => message.content)
+    .find(
+      (message) =>
+        normalizeText(message) !== current &&
+        containsExternalAction(normalizeText(message)),
+    );
+  return previousRequest ? `${previousRequest}\nFollow-up: ${input.prompt}` : null;
+}
+
+function asksForInstructions(text) {
+  return /^(how|how do|how can|explain|guide|show me how|what are|what is|give me steps|write instructions)\b/u.test(
+    text,
+  );
+}
+
+function containsExternalAction(text) {
+  const target =
+    /\b(github|repository|repo|pages|deployment|branch|remote)\b/u.test(
+      text,
+    );
+  if (!target) return false;
+  const explicitExternalAction =
+    /\b(clone|import|commit|push|deploy|publish|enable|upload|move|copy)\b/u.test(
+      text,
+    );
+  if (explicitExternalAction) return true;
+  const repositoryMutation =
+    /\b(write|change|create|update|modify)\b.{0,60}\b(repository|repo|branch|remote|github pages)\b/u.test(
+      text,
+    ) ||
+    /\b(write|change|create|update|modify)\b.{0,40}\b(to|in|on)\s+github\b/u.test(
+      text,
+    );
+  return repositoryMutation;
+}
+
+function safeExternalActionResponse(request) {
+  return [
+    "**External action not executed.**",
+    "",
+    `Electron understood the request as: ${String(request).slice(0, 700)}`,
+    "",
+    "This model service has no repository, GitHub, shell, filesystem, or deployment tool. It cannot truthfully claim that it cloned, imported, committed, pushed, deployed, enabled Pages, or changed files.",
+    "",
+    "Use a separately authorized execution integration and approve the exact destination, branch, files, and commit before making the change.",
+  ].join("\n");
 }
 
 function safeProviderError(error) {

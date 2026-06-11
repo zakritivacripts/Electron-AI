@@ -8,6 +8,11 @@ The static interface works immediately in demo mode. Real model calls use the
 included Cloudflare Worker so provider keys never appear in browser JavaScript or
 the public repository.
 
+Demo mode is an offline interface preview, not an AI simulation. It classifies
+each request and responds specifically, but it does not run models or external
+tools. The interface never claims that a repository, deployment, or file was
+changed when no authorized execution tool exists.
+
 ## What is included
 
 - Responsive GitHub Pages interface with persistent local chat history
@@ -17,6 +22,10 @@ the public repository.
 - Parallel specialist calls with partial-failure handling
 - Claude review followed by GPT verification
 - Automatic GitHub Pages deployment workflow
+- Prompt-aware offline responses instead of a repeated canned completion
+- Duplicate-response detection and one corrective backend retry
+- Direct GitHub repository reads and atomic, approval-gated commits
+- Optional GitHub Pages workflow creation and Pages API configuration
 
 ## Codex and Claude Code
 
@@ -64,16 +73,55 @@ https://YOUR-GITHUB-USER.github.io/electron-ai/
 ```
 
 The interface stores chats and non-secret preferences in browser `localStorage`.
-The backend access token is held in memory only and must be entered again after a
-page reload. Use a dedicated custom domain instead of a shared
+Backend and GitHub access tokens are held in memory only and must be entered again
+after a page reload. Use a dedicated custom domain instead of a shared
 `username.github.io` origin for sensitive conversations because browser storage
 is origin-scoped, not repository-path-scoped. Demo mode works on the normal
 GitHub Pages URL; live backend mode should use the dedicated domain.
+
+## Connect a GitHub repository
+
+Open **Connection** in Electron AI and enter:
+
+1. The repository as `owner/name`.
+2. The branch Electron should read and update.
+3. A fine-grained personal access token limited to that repository.
+4. **Test GitHub access**, then **Save connection**.
+
+Repository tokens are kept in page memory, never written to `localStorage`.
+Electron can read selected text files as model context. Import, upload, push,
+publish, deploy, and repository-work requests use GitHub's Git Data API to create
+blobs, one tree, one commit, and a non-forced branch update. The page always asks
+for approval showing the exact repository, branch, and file paths before it
+writes, even when the normal approval policy is **Do not ask**.
+
+The approval also shows the exact branch head, full text contents, byte counts,
+and SHA-256 fingerprints. Binary files are fingerprinted but not rendered. One
+commit is limited to 50 files and 5 MB. Model-generated repository changes are
+limited to one complete file per run; attach a reviewed file set for multi-file
+imports. Once the final branch update begins, the UI disables Stop because a
+submitted remote mutation cannot be reliably canceled.
+
+Fine-grained token permissions:
+
+- **Contents: Read and write** for repository reads and commits.
+- **Workflows: Read and write** when the approved commit adds the Pages workflow.
+- **Pages: Read and write** plus **Administration: Read and write** when Electron
+  should enable or switch the repository to GitHub Actions Pages deployment.
+
+Branch protection and repository rules still apply. Electron uses a fast-forward
+reference update and does not force-push.
 
 ## Deploy the Worker backend
 
 Cloudflare Workers is one convenient backend option; GitHub Pages itself cannot
 execute server code or keep API keys secret.
+
+The included Worker performs model orchestration only. It cannot modify GitHub.
+The static client performs repository reads and approved writes directly with the
+session-only GitHub credential. This is suitable for a personal deployment. For
+a public or multi-user service, replace the browser token flow with a GitHub App
+or OAuth backend that stores credentials server-side and records approvals.
 
 From the `worker` directory:
 
@@ -157,14 +205,17 @@ and uses that bridge without exposing arbitrary shell commands.
 
 - Never add provider keys to `app.js`, repository secrets exposed to Pages, or
   browser build variables.
+- Use a fine-grained GitHub token limited to one repository, the shortest useful
+  expiration, and only the permissions listed above. Revoke it if the site or
+  browser session may have been compromised.
 - Set `ELECTRON_ACCESS_TOKEN` and a strict `ALLOWED_ORIGINS` value.
 - The reference Worker requires the access token, Cloudflare rate-limiting
   binding, and bounded per-isolate concurrency. Add durable per-user
   authentication, audit logs, and persistent spend controls before offering this
   as a public multi-user service.
-- Approval settings govern this text-generation workflow. The included Worker
-  does not execute tools or modify projects. A future tool-execution service must
-  use server-side pending actions and bind each approval to exact arguments.
+- The Worker does not execute tools or modify projects. The browser GitHub
+  integration binds each approval to the displayed repository, branch, and file
+  list. A multi-user deployment should move that enforcement server-side.
 - Generated code is untrusted until reviewed.
 
 ## Current provider documentation
